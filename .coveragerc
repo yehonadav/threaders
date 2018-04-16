@@ -1,11 +1,11 @@
 [run]
 branch = True
 source =
-    variable_generator
+    threaders
     tests
 
 [paths]
 source =
-    variable_generator
-    .tox/*/lib/python*/site-packages/variable_generator
-    .tox/pypy/site-packages/variable_generator
+    threaders
+    .tox/*/lib/python*/site-packages/threaders
+    .tox/pypy/site-packages/threaders

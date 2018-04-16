@@ -7,13 +7,13 @@ from setuptools import setup
 with io.open('README.rst', 'rt', encoding='utf8') as f:
     readme = f.read()
 
-with io.open('variable_generator.py', 'rt', encoding='utf8') as f:
+with io.open('threaders.py', 'rt', encoding='utf8') as f:
     version = re.search(r'__version__ = \'(.*?)\'', f.read()).group(1)
 
 setup(
-    name='variable_generator',
+    name='threaders',
     version=version,
-    url='https://github.com/yehonadav/variable_generator',
+    url='https://github.com/yehonadav/threaders',
     license='Apache Software',
     author='Yehonadav Bar Elan',
     author_email='yonadav.barilan@gmail.com',
@@ -21,7 +21,7 @@ setup(
     maintainer_email='yonadav.barilan@gmail.com',
     description='A small module to support automation of generating valid python variable names from external data.',
     long_description=readme,
-    packages=['variable_generator'],
+    packages=['threaders'],
     include_package_data=True,
     zip_safe=False,
     platforms='any',
@@ -54,7 +54,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'variable_generator = variable_generator.cli:main',
+            'threaders = threaders.cli:main',
         ],
     },
 )

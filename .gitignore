@@ -1,6 +1,6 @@
 .DS_Store
 .env
-.variable_generatorenv
+.threadersenv
 *.pyc
 *.pyo
 env/
