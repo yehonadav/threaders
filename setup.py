@@ -36,7 +36,6 @@ setup(
     },
     classifiers=[
         'Development Status :: 5 - Production/Stable',
-        'Environment :: Web Environment',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
