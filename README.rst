@@ -19,7 +19,7 @@ pip install -U threaders
 A Simple Example:
 
 
-import threaders
+from threaders import threaders
 
 import time
 

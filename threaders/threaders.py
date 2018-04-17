@@ -18,7 +18,7 @@
 please enjoy =)
 here is a usage example code:
 
-import threaders
+from threaders import threaders
 import time
 
 
