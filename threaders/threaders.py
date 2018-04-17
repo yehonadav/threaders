@@ -55,9 +55,6 @@ import threading
 from queue import Queue
 
 
-__version__ = '0.1.dev0'
-
-
 class Thread(threading.Thread):
     def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, *, daemon=None):
         self.queue = Queue()
