@@ -53,12 +53,13 @@ if __name__ == "__main__":
 
 import threading
 from queue import Queue
+from time import time
 
 
 class Thread(threading.Thread):
-    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, *, daemon=None):
-        self.queue = Queue()
-        threading.Thread.__init__(self, group, target, name, (self.queue,) + args, kwargs, daemon=daemon)
+    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, max_results=0, daemon=None):
+        self.results = Queue(max_results)
+        threading.Thread.__init__(self, group, target, name, (self.results,) + args, kwargs, daemon=daemon)
 
 
 def threader(group=None, name=None, daemon=True):
@@ -68,9 +69,9 @@ def threader(group=None, name=None, daemon=True):
     :param daemon: thread behavior
     :rtype: decorator
     """
-    def decorator(job):
+    def decorator(target):
         """
-        :param job: function to be threaded
+        :param target: function to be threaded
         :rtype: wrap
         """
         def wrapped_job(queue, *args, **kwargs):
@@ -78,8 +79,7 @@ def threader(group=None, name=None, daemon=True):
             and puts the result in a queue
             :type queue: Queue
             """
-            ret = job(*args, **kwargs)
-            queue.put(ret)
+            queue.put(target(*args, **kwargs))
 
         def wrap(*args, **kwargs):
             """ this is the function returned from the decorator. It fires off
@@ -98,23 +98,38 @@ class ThreadWorker(Thread):
     """Thread executing tasks from a given tasks queue
     :type pool: ThreadPool
     """
-    def __init__(self, pool, group=None, name=None, daemon=True):
-        Thread.__init__(self, group=group, name=name, daemon=daemon)
+    def __init__(self, pool, group=None, name=None, daemon=True, collect_results=False, max_results=0):
+        Thread.__init__(self, group=group, name=name, daemon=daemon, max_results=max_results)
+        self._stop = None
         self.pool = pool
         self.start()
+        self.collect_results = collect_results
+
+    def start(self):
+        self._stop = False
+        Thread.start(self)
 
     def run(self):
         while True:
-            func, args, kwargs = self.pool.tasks.get()
-            self.queue.put(func(*args, **kwargs))
-            self.pool.tasks.task_done()
-            if self.pool.collect_results is True:
-                self.pool.results.append(self.queue.get())
+            if self.pool.tasks.qsize() > 0:
+                target, args, kwargs = self.pool.tasks.get()
+                result = target(*args, **kwargs)
+                self.pool.tasks.task_done()
+                if result is not None:
+                    if self.pool.collect_results is True:
+                        self.pool.results.put(result)
+                    if self.collect_results is True:
+                        self.results.put(result)
+            if self._stop is True:
+                break
+
+    def stop(self):
+        self._stop = True
 
 
 class ThreadPool:
     """Pool of threads consuming tasks from a queue"""
-    def __init__(self, threads_num, max_tasks=0, collect_results=False):
+    def __init__(self, threads_num, max_tasks=0, daemon=True, collect_results=False, worker_collect_results=False, max_results=0, max_worker_results=0):
         """ create a pool of workers, run tasks, collect results
         :param threads_num: number of workers
         :param max_tasks: limit the tasks queue
@@ -124,28 +139,66 @@ class ThreadPool:
         :type max_tasks: int
         :type collect_results: bool
         """
-
         self.tasks = Queue(max_tasks)
         self.collect_results = collect_results
-        self.results = []
-        self.threads = []
-        for _ in range(threads_num):
-            self.threads.append(ThreadWorker(self))
+        self.results = Queue(max_results)
+        self.threads = (ThreadWorker(self, collect_results=worker_collect_results, daemon=daemon, max_results=max_worker_results) for _ in range(threads_num))
+        self._stop = False
 
-    def put(self, func, *args, **kwargs):
+    def put(self, target, *args, **kwargs):
         """Add a task to the queue"""
-        self.tasks.put((func, args, kwargs))
+        self.tasks.put((target, args, kwargs))
 
     def join(self):
         """Wait for completion of all the tasks in the queue"""
         self.tasks.join()
 
+    def stop(self):
+        self._stop = True
+        for thread in self.threads:
+            thread.stop()
 
-def get_first_result(threads):
+    def start(self):
+        self._stop = False
+        for thread in self.threads:
+            thread.start()
+
+    def get_first_result(self, timeout=None):
+        """ will return the first unNone result.
+        this method demand for self.collect_results = True
+        if no results are found, will return None
+        :type timeout: float
+        """
+        t = time()
+        while self.collect_results:
+            if not self.results.empty():
+                return self.results.get()
+
+            # while self.tasks.empty():
+            #     self.stop()
+            #     some_threads_are_alive = False
+            #     for thread in self.threads:
+            #         if thread.is_alive():
+            #             some_threads_are_alive = True
+            #             break
+            #     self.start()
+            #     if some_threads_are_alive is False:
+            #             return None
+
+            if timeout is not None and time() - t >= timeout:
+                raise TimeoutError
+
+
+def get_first_result(threads, timeout=None):
     """ this blocks, waiting for the first result that returns from a thread
     :type threads: list[Thread]
+    :type timeout: float
     """
+    t = time()
     while True:
         for thread in threads:
-            if not thread.is_alive():
-                return thread.queue.get()
+            if not thread.results.empty():
+                return thread.results.get()
+        if timeout is not None:
+            if time() - t >= timeout:
+                raise TimeoutError
