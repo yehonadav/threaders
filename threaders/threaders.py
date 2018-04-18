@@ -94,6 +94,53 @@ def threader(group=None, name=None, daemon=True):
     return decorator
 
 
+class ThreadWorker(Thread):
+    """Thread executing tasks from a given tasks queue
+    :type pool: ThreadPool
+    """
+    def __init__(self, pool, group=None, name=None, daemon=True):
+        Thread.__init__(self, group=group, name=name, daemon=daemon)
+        self.pool = pool
+        self.start()
+
+    def run(self):
+        while True:
+            func, args, kwargs = self.pool.tasks.get()
+            self.queue.put(func(*args, **kwargs))
+            self.pool.tasks.task_done()
+            if self.pool.collect_results is True:
+                self.pool.results.append(self.queue.get())
+
+
+class ThreadPool:
+    """Pool of threads consuming tasks from a queue"""
+    def __init__(self, threads_num, max_tasks=0, collect_results=False):
+        """ create a pool of workers, run tasks, collect results
+        :param threads_num: number of workers
+        :param max_tasks: limit the tasks queue
+        :param collect_results: you can collect results from your workers
+
+        :type threads_num: int
+        :type max_tasks: int
+        :type collect_results: bool
+        """
+
+        self.tasks = Queue(max_tasks)
+        self.collect_results = collect_results
+        self.results = []
+        self.threads = []
+        for _ in range(threads_num):
+            self.threads.append(ThreadWorker(self))
+
+    def put(self, func, *args, **kwargs):
+        """Add a task to the queue"""
+        self.tasks.put((func, args, kwargs))
+
+    def join(self):
+        """Wait for completion of all the tasks in the queue"""
+        self.tasks.join()
+
+
 def get_first_result(threads):
     """ this blocks, waiting for the first result that returns from a thread
     :type threads: list[Thread]

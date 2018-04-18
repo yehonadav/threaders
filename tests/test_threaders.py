@@ -1,6 +1,8 @@
 import unittest
-import threaders
 import time
+from threaders import threaders
+from random import randrange
+import threading
 
 
 class TestThreaders(unittest.TestCase):
@@ -38,6 +40,22 @@ class TestThreaders(unittest.TestCase):
             thread.join()
 
         assert time.time() - t > 0.09
+
+    def test_thread_pool(self):
+        delays = [randrange(1, 3)*0.1 for i in range(50)]
+        print_lock = threading.Lock()
+
+        def wait_delay(i, d):
+            with print_lock:
+                print('{} sleeping for ({})sec'.format(i, d))
+            time.sleep(d)
+
+        pool = threaders.ThreadPool(20)
+
+        for i, d in enumerate(delays):
+            pool.put(wait_delay, i, d)
+
+        pool.join()
 
 
 if __name__ == '__main__':
