@@ -69,3 +69,42 @@ def main():
 if __name__ == "__main__":
 
     main()
+
+
+
+
+Example with a thread pool:
+
+
+
+
+from random import randrange
+
+from time import sleep
+
+import threading
+
+
+delays = [randrange(1, 3) for i in range(50)]
+
+print_lock = threading.Lock()
+
+
+def wait_delay(i, d):
+
+    with print_lock:
+
+        print('{} sleeping for ({})sec'.format(i, d))
+
+    sleep(d)
+
+
+pool = threaders.ThreadPool(10)
+
+
+for i, d in enumerate(delays):
+
+    pool.put(wait_delay, i, d)
+
+
+pool.join()
