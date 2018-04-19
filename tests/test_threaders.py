@@ -16,6 +16,8 @@ class TestThreaders(unittest.TestCase):
             time.sleep(0.01 * x)
             return time.time() - t
 
+        t = time.time()
+
         # create threads
         threads = []
         for i in range(10):
@@ -23,14 +25,13 @@ class TestThreaders(unittest.TestCase):
 
         self.assertEqual(len(threads), 10)
 
-        assert threaders.get_first_result(threads) < 0.01
+        self.assertGreater(0.01, threaders.get_first_result(threads))
 
         # kill threads
-        t = time.time()
         for thread in threads:
             thread.join()
 
-        assert time.time() - t > 0.09
+        self.assertGreater(time.time() - t, 0.09)
 
     def test_thread_pool(self):
         # create data
@@ -50,8 +51,7 @@ class TestThreaders(unittest.TestCase):
         for i, d in enumerate(delays):
             pool.put(wait_delay, i, d)
 
-        assert threaders.get_first_result(pool.threads, timeout=1) in range(50)
-
+        self.assertIn(threaders.get_first_result(pool.threads, timeout=1), range(50))
         pool.join()
 
         # validation
@@ -68,7 +68,7 @@ class TestThreaders(unittest.TestCase):
         for _ in range(20):
             pool.put(wait_delay)
 
-        assert pool.get_first_result() in (0.01, 0.02, 0.03, 0.04, 0.05)
+        self.assertIn(pool.get(), (0.01, 0.02, 0.03, 0.04, 0.05))
         pool.join()
 
     def test_thread_pool_first_result_timeout(self):
@@ -85,28 +85,62 @@ class TestThreaders(unittest.TestCase):
         validation = False
         while not pool.tasks.empty():
             try:
-                pool.get_first_result(timeout=0.009)
-            except TimeoutError as e:
+                pool.get(timeout=0.009)
+            except TimeoutError:
                 validation = True
                 break
 
         pool.join()
-        assert validation is True
+        self.assertEqual(validation, True)
 
     def test_thread_pool_first_result_return_none(self):
         def wait_delay():
             from random import randint
-            tt = randint(1, 5) * 10
+            tt = randint(1, 5) * 0.1
             time.sleep(tt)
 
         pool = threaders.ThreadPool(5, collect_results=True)
         for _ in range(1):
             pool.put(wait_delay)
 
-        validation = pool.get_first_result()
+        validation = pool.get()
 
         pool.join()
-        assert validation is None
+        self.assertEqual(validation, None)
+
+    def test_thread_pool_first_result_return_none_with_timeout(self):
+        def wait_delay():
+            from random import randint
+            tt = randint(1, 5) * 0.1
+            time.sleep(tt)
+
+        pool = threaders.ThreadPool(5, collect_results=True)
+        for _ in range(1):
+            pool.put(wait_delay)
+
+        validation = pool.get(timeout=1)
+
+        pool.join()
+        self.assertEqual(validation, None)
+
+    def test_thread_pool_first_result_raise_timeout_before_returning_none(self):
+        def wait_delay():
+            from random import randint
+            tt = randint(1, 5) * 0.1
+            time.sleep(tt)
+
+        pool = threaders.ThreadPool(5, collect_results=True)
+        for _ in range(1):
+            pool.put(wait_delay)
+
+        try:
+            validation = False
+            pool.get(timeout=0.09)
+        except TimeoutError:
+            validation = True
+
+        pool.join()
+        self.assertEqual(validation, True)
 
 
 if __name__ == '__main__':

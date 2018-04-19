@@ -104,6 +104,7 @@ class ThreadWorker(Thread):
         self.pool = pool
         self.start()
         self.collect_results = collect_results
+        self.running_task = None
 
     def start(self):
         self._stop = False
@@ -112,8 +113,9 @@ class ThreadWorker(Thread):
     def run(self):
         while True:
             if self.pool.tasks.qsize() > 0:
-                target, args, kwargs = self.pool.tasks.get()
+                self.running_task = target, args, kwargs = self.pool.tasks.get()
                 result = target(*args, **kwargs)
+                self.running_task = None
                 self.pool.tasks.task_done()
                 if result is not None:
                     if self.pool.collect_results is True:
@@ -142,7 +144,7 @@ class ThreadPool:
         self.tasks = Queue(max_tasks)
         self.collect_results = collect_results
         self.results = Queue(max_results)
-        self.threads = (ThreadWorker(self, collect_results=worker_collect_results, daemon=daemon, max_results=max_worker_results) for _ in range(threads_num))
+        self.threads = [ThreadWorker(self, collect_results=worker_collect_results, daemon=daemon, max_results=max_worker_results) for _ in range(threads_num)]
         self._stop = False
 
     def put(self, target, *args, **kwargs):
@@ -163,27 +165,32 @@ class ThreadPool:
         for thread in self.threads:
             thread.start()
 
-    def get_first_result(self, timeout=None):
+    def get(self, timeout=None):
         """ will return the first unNone result.
         this method demand for self.collect_results = True
         if no results are found, will return None
         :type timeout: float
         """
         t = time()
+        some_tasks_are_running = None
         while self.collect_results:
+            # get result
             if not self.results.empty():
                 return self.results.get()
 
-            # while self.tasks.empty():
-            #     self.stop()
-            #     some_threads_are_alive = False
-            #     for thread in self.threads:
-            #         if thread.is_alive():
-            #             some_threads_are_alive = True
-            #             break
-            #     self.start()
-            #     if some_threads_are_alive is False:
-            #             return None
+            # return none if all tasks are done but there are no results
+            while self.tasks.empty():
+                some_tasks_are_running = False
+                for thread in self.threads:
+                    if timeout is not None and time() - t >= timeout:
+                        raise TimeoutError
+                    elif thread.running_task is not None:
+                        some_tasks_are_running = True
+                        break
+                if some_tasks_are_running is False:
+                    break
+            if some_tasks_are_running is False:
+                return None
 
             if timeout is not None and time() - t >= timeout:
                 raise TimeoutError
