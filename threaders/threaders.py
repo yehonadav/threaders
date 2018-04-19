@@ -195,6 +195,18 @@ class ThreadPool:
             if timeout is not None and time() - t >= timeout:
                 raise TimeoutError
 
+    def get_and_stop(self, timeout=None):
+        try:
+            return self.get(timeout)
+        finally:
+            self.stop()
+
+    def get_stop_and_join(self, timeout=None):
+        try:
+            return self.get_and_stop(timeout)
+        finally:
+            self.join()
+
 
 def get_first_result(threads, timeout=None):
     """ this blocks, waiting for the first result that returns from a thread
