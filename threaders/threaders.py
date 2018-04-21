@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
 
 import threading
-from queue import Queue
+from queue import Queue, Empty
 from time import time
 
 
@@ -66,27 +66,20 @@ def threader(group=None, name=None, daemon=True):
     """ decorator to thread functions
     :param group: reserved for future extension when a ThreadGroup class is implemented
     :param name: thread name
-    :param daemon: thread behavior
-    :rtype: decorator
-    """
+    :param daemon: thread behavior """
     def decorator(target):
-        """
-        :param target: function to be threaded
-        :rtype: wrap
-        """
+        """ :param target: function to be threaded """
         def wrapped_job(queue, *args, **kwargs):
             """ this function calls the decorated function
             and puts the result in a queue
-            :type queue: Queue
-            """
+            :type queue: Queue """
             queue.put(target(*args, **kwargs))
 
         def wrap(*args, **kwargs):
             """ this is the function returned from the decorator. It fires off
             wrapped_f in a new thread and returns the thread object with
             the result queue attached
-            :rtype: Thread
-            """
+            :rtype: Thread """
             thread = Thread(group=group, target=wrapped_job, name=name, args=args, kwargs=kwargs, daemon=daemon)
             thread.start()
             return thread
@@ -98,28 +91,38 @@ class ThreadWorker(Thread):
     """Thread executing tasks from a given tasks queue
     :type pool: ThreadPool
     """
-    def __init__(self, pool, group=None, name=None, daemon=True, collect_results=False, max_results=0):
+    def __init__(self, pool, group=None, name=None, daemon=True, collect_results=False, max_results=0, timeout=0.1):
         Thread.__init__(self, group=group, name=name, daemon=daemon, max_results=max_results)
         self.pool = pool
         self.start()
         self.collect_results = collect_results
         self.running_task = None
+        self.timeout = timeout
 
     def start(self):
         Thread.start(self)
 
     def run(self):
         while self._is_stopped is False:
+            if self.pool.lifecycle is not None:
+                if self.pool.lifecycle <= time() - self.pool.creation_time:
+                    if self.pool.is_stopped is False:
+                        self.pool.is_stopped = True
+                    self.stop()
+                    break
             if self.pool.tasks.qsize() > 0:
-                self.running_task = target, args, kwargs = self.pool.tasks.get()
-                result = target(*args, **kwargs)
-                self.running_task = None
-                self.pool.tasks.task_done()
-                if result is not None:
-                    if self.pool.collect_results is True:
-                        self.pool.results.put(result)
-                    if self.collect_results is True:
-                        self.results.put(result)
+                try:
+                    self.running_task = target, args, kwargs = self.pool.tasks.get(timeout=self.timeout)
+                    result = target(*args, **kwargs)
+                    self.running_task = None
+                    self.pool.tasks.task_done()
+                    if result is not None:
+                        if self.pool.collect_results is True:
+                            self.pool.results.put(result)
+                        if self.collect_results is True:
+                            self.results.put(result)
+                except Empty:
+                    pass
 
     def stop(self):
         self._is_stopped = True
@@ -127,21 +130,25 @@ class ThreadWorker(Thread):
 
 class ThreadPool:
     """Pool of threads consuming tasks from a queue"""
-    def __init__(self, threads_num=1, max_tasks=0, daemon=True, collect_results=False, worker_collect_results=False, max_results=0, max_worker_results=0):
+    def __init__(self, threads_num=1, lifecycle=None, max_tasks=0, daemon=True, collect_results=False, worker_collect_results=False, max_results=0, max_worker_results=0, timeout=0.1):
         """ create a pool of workers, run tasks, collect results
         :param threads_num: number of workers
+        :param lifecycle: give your pool a set time to live before stopping
         :param max_tasks: limit the tasks queue
         :param collect_results: you can collect results from your workers
-
         :type threads_num: int
+        :type lifecycle: int
         :type max_tasks: int
         :type collect_results: bool
         """
         self.tasks = Queue(max_tasks)
         self.collect_results = collect_results
-        self._is_stopped = False
+        self.is_stopped = False
         self.results = Queue(max_results)
-        self.threads = [ThreadWorker(self, collect_results=worker_collect_results, daemon=daemon, max_results=max_worker_results) for _ in range(threads_num)]
+        self.lifecycle = lifecycle
+        self.creation_time = time()
+        self.timeout = timeout
+        self.threads = [ThreadWorker(self, collect_results=worker_collect_results, daemon=daemon, max_results=max_worker_results, timeout=timeout) for _ in range(threads_num)]
 
     def put(self, target, *args, **kwargs):
         """Add a task to the queue"""
@@ -149,19 +156,19 @@ class ThreadPool:
 
     def join(self):
         """Wait for completion of all the tasks in the queue"""
-        if self._is_stopped is True:
-            for thread in self.threads:
-                thread.join()
-        else:
+        if self.is_stopped is False:
             self.tasks.join()
+            self.stop()
+        for thread in self.threads:
+            thread.join()
 
     def stop(self):
-        self._is_stopped = True
+        self.is_stopped = True
         for thread in self.threads:
             thread.stop()
 
     def start(self):
-        self._is_stopped = False
+        self.is_stopped = False
         for thread in self.threads:
             thread.start()
 
@@ -176,7 +183,10 @@ class ThreadPool:
         while self.collect_results:
             # get result
             if not self.results.empty():
-                return self.results.get()
+                try:
+                    return self.results.get(self.timeout)
+                except Empty:
+                    pass
 
             # return none if all tasks are done but there are no results
             while self.tasks.empty():
@@ -200,6 +210,12 @@ class ThreadPool:
             return self.get(timeout)
         finally:
             self.stop()
+
+    def get_and_join(self, timeout=None):
+        try:
+            return self.get(timeout)
+        finally:
+            self.join()
 
     def get_stop_and_join(self, timeout=None):
         try:
