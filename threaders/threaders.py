@@ -100,18 +100,16 @@ class ThreadWorker(Thread):
     """
     def __init__(self, pool, group=None, name=None, daemon=True, collect_results=False, max_results=0):
         Thread.__init__(self, group=group, name=name, daemon=daemon, max_results=max_results)
-        self._stop = None
         self.pool = pool
         self.start()
         self.collect_results = collect_results
         self.running_task = None
 
     def start(self):
-        self._stop = False
         Thread.start(self)
 
     def run(self):
-        while True:
+        while self._is_stopped is False:
             if self.pool.tasks.qsize() > 0:
                 self.running_task = target, args, kwargs = self.pool.tasks.get()
                 result = target(*args, **kwargs)
@@ -122,16 +120,14 @@ class ThreadWorker(Thread):
                         self.pool.results.put(result)
                     if self.collect_results is True:
                         self.results.put(result)
-            if self._stop is True:
-                break
 
     def stop(self):
-        self._stop = True
+        self._is_stopped = True
 
 
 class ThreadPool:
     """Pool of threads consuming tasks from a queue"""
-    def __init__(self, threads_num, max_tasks=0, daemon=True, collect_results=False, worker_collect_results=False, max_results=0, max_worker_results=0):
+    def __init__(self, threads_num=1, max_tasks=0, daemon=True, collect_results=False, worker_collect_results=False, max_results=0, max_worker_results=0):
         """ create a pool of workers, run tasks, collect results
         :param threads_num: number of workers
         :param max_tasks: limit the tasks queue
@@ -143,9 +139,9 @@ class ThreadPool:
         """
         self.tasks = Queue(max_tasks)
         self.collect_results = collect_results
+        self._is_stopped = False
         self.results = Queue(max_results)
         self.threads = [ThreadWorker(self, collect_results=worker_collect_results, daemon=daemon, max_results=max_worker_results) for _ in range(threads_num)]
-        self._stop = False
 
     def put(self, target, *args, **kwargs):
         """Add a task to the queue"""
@@ -153,15 +149,19 @@ class ThreadPool:
 
     def join(self):
         """Wait for completion of all the tasks in the queue"""
-        self.tasks.join()
+        if self._is_stopped is True:
+            for thread in self.threads:
+                thread.join()
+        else:
+            self.tasks.join()
 
     def stop(self):
-        self._stop = True
+        self._is_stopped = True
         for thread in self.threads:
             thread.stop()
 
     def start(self):
-        self._stop = False
+        self._is_stopped = False
         for thread in self.threads:
             thread.start()
 

@@ -142,6 +142,37 @@ class TestThreaders(unittest.TestCase):
         pool.join()
         self.assertEqual(validation, True)
 
+    def test_thread_pool_get_stop_and_join(self):
+        def wait_delay():
+            from random import randint
+            tt = randint(1, 5) * 0.1
+            time.sleep(tt)
+            return tt
+
+        pool = threaders.ThreadPool(5, collect_results=True)
+        for _ in range(100):
+            pool.put(wait_delay)
+
+        t = time.time()
+        pool.get_stop_and_join()
+        t = time.time() - t
+
+        self.assertGreater(1, t)
+
+    def test_thread_pool_get_none_stop_and_join(self):
+        def wait_delay():
+            time.sleep(0.1)
+
+        pool = threaders.ThreadPool(5, collect_results=True)
+        for _ in range(30):
+            pool.put(wait_delay)
+
+        t = time.time()
+        pool.get_stop_and_join()
+        t = time.time() - t
+
+        self.assertGreater(1, t)
+
 
 if __name__ == '__main__':
     unittest.main()
