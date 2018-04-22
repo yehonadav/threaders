@@ -207,6 +207,15 @@ class ThreadPool:
         for thread in self.threads:
             thread.start()
 
+    def get_all(self, timeout=None):
+        results = []
+        while not self.results.empty():
+            try:
+                self.results.get(timeout)
+            except:
+                pass
+        return results
+
     def get(self, timeout=None):
         """ will return the first unNone result.
         this method demand for self.collect_results = True
