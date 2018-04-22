@@ -50,7 +50,7 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         # create thread pool
-        pool = threaders.ThreadPool(20, collect_results=True, worker_collect_results=True)
+        pool = threaders.ThreadPool(workers=20, collect_results=True, worker_collect_results=True)
         for i, d in enumerate(delays):
             pool.put(wait_delay, i, d)
 
@@ -73,7 +73,7 @@ class TestThreaders(unittest.TestCase):
 
         test_start_time = time.time()
 
-        pool = threaders.ThreadPool(5, collect_results=True)
+        pool = threaders.ThreadPool(workers=5, collect_results=True)
         for _ in range(20):
             pool.put(wait_delay)
 
@@ -93,7 +93,7 @@ class TestThreaders(unittest.TestCase):
 
         test_start_time = time.time()
 
-        pool = threaders.ThreadPool(5, collect_results=True)
+        pool = threaders.ThreadPool(workers=5, collect_results=True)
         for _ in range(20):
             pool.put(wait_delay)
 
@@ -120,7 +120,7 @@ class TestThreaders(unittest.TestCase):
 
         test_start_time = time.time()
 
-        pool = threaders.ThreadPool(5, collect_results=True)
+        pool = threaders.ThreadPool(workers=5, collect_results=True)
         for _ in range(1):
             pool.put(wait_delay)
 
@@ -141,7 +141,7 @@ class TestThreaders(unittest.TestCase):
 
         test_start_time = time.time()
 
-        pool = threaders.ThreadPool(5, collect_results=True)
+        pool = threaders.ThreadPool(workers=5, collect_results=True)
         for _ in range(1):
             pool.put(wait_delay)
 
@@ -162,7 +162,7 @@ class TestThreaders(unittest.TestCase):
 
         test_start_time = time.time()
 
-        pool = threaders.ThreadPool(5, collect_results=True)
+        pool = threaders.ThreadPool(workers=5, collect_results=True)
         for _ in range(1):
             pool.put(wait_delay)
 
@@ -188,7 +188,7 @@ class TestThreaders(unittest.TestCase):
 
         test_start_time = time.time()
 
-        pool = threaders.ThreadPool(5, collect_results=True)
+        pool = threaders.ThreadPool(workers=5, collect_results=True)
         for _ in range(100):
             pool.put(wait_delay)
 
@@ -208,7 +208,7 @@ class TestThreaders(unittest.TestCase):
 
         test_start_time = time.time()
 
-        pool = threaders.ThreadPool(5, collect_results=True)
+        pool = threaders.ThreadPool(workers=5, collect_results=True)
         for _ in range(30):
             pool.put(wait_delay)
 
@@ -230,11 +230,11 @@ class TestThreaders(unittest.TestCase):
 
         test_start_time = time.time()
 
-        pool = threaders.ThreadPool(30, lifecycle=1, collect_results=True)
+        pool = threaders.ThreadPool(workers=30, lifecycle=1, collect_results=True)
         for _ in range(1000):
             pool.put(wait_delay)
 
-        time.sleep(1)
+        time.sleep(1.1)
         self.assertEqual(pool.is_stopped, True)
 
         results_size = pool.results.qsize()
@@ -244,6 +244,61 @@ class TestThreaders(unittest.TestCase):
         test_end_time = time.time()
         print("test_thread_pool_with_lifecycle {}s".format(test_end_time-test_start_time))
         pool.join()
+        self.assertGreater(5, threading.active_count())
+
+    def test_thread_pool_with_error_storage(self):
+        def wait_delay():
+            time.sleep(0.1)
+            return threading.current_thread().name
+
+        def raise_exception():
+            ex = 1 + ""
+
+        test_start_time = time.time()
+
+        pool = threaders.ThreadPool(workers=30, lifecycle=100, collect_results=True, store_errors=True)
+        for _ in range(100):
+            pool.put(wait_delay)
+        pool.put(raise_exception)
+
+        while pool.errors.qsize() < 1:
+            pass
+
+        self.assertEqual(len(pool.threads), 30)
+        pool.join()
+
+        error = pool.errors.get()
+        with self.assertRaises(TypeError):
+            raise error
+
+        test_end_time = time.time()
+        print("test_thread_pool_with_error_storage {}s".format(test_end_time-test_start_time))
+        self.assertGreater(5, threading.active_count())
+
+    def test_thread_pool_with_exception(self):
+        def wait_delay():
+            time.sleep(0.001)
+            return threading.current_thread().name
+
+        def raise_exception():
+            ex = 1 + ""
+
+        test_start_time = time.time()
+
+        pool = threaders.ThreadPool(workers=30, lifecycle=100, collect_results=True)
+        pool.put(raise_exception)
+        for _ in range(100):
+            pool.put(wait_delay)
+
+        self.assertGreater(threading.active_count(), 30)
+
+        try:
+            pool.join()
+        except TypeError:
+            pass
+
+        test_end_time = time.time()
+        print("test_thread_pool_with_exception {}s".format(test_end_time-test_start_time))
         self.assertGreater(5, threading.active_count())
 
 
