@@ -267,6 +267,24 @@ class ThreadPool:
         finally:
             self.join()
 
+    def get_all_and_stop(self, timeout=None):
+        try:
+            return self.get_all(timeout)
+        finally:
+            self.stop()
+
+    def get_all_and_join(self, timeout=None):
+        try:
+            return self.get_all(timeout)
+        finally:
+            self.join()
+
+    def get_all_stop_and_join(self, timeout=None):
+        try:
+            return self.get_all_and_stop(timeout)
+        finally:
+            self.join()
+
 
 def get_first_result(threads, timeout=None):
     """ this blocks, waiting for the first result that returns from a thread
