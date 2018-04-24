@@ -211,7 +211,7 @@ class ThreadPool:
         results = []
         while not self.results.empty():
             try:
-                self.results.get(timeout)
+                results.append(self.results.get(timeout))
             except:
                 pass
         return results
