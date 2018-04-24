@@ -209,11 +209,15 @@ class ThreadPool:
 
     def get_all(self, timeout=None):
         results = []
-        while not self.results.empty():
+        while not self.results.empty() or not self.tasks.empty():
             try:
-                results.append(self.results.get(timeout))
-            except:
+                result = self.get(timeout)
+                if result is not None:
+                    results.append(result)
+            except TimeoutError:
                 pass
+        if len(results) == 0:
+            return None
         return results
 
     def get(self, timeout=None):
