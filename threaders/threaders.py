@@ -80,10 +80,11 @@ class Thread(threading.Thread):
 
 class DynamicWorker(threading.Thread):
     """ Thread executing tasks from a given tasks queue
-    :type pool: ThreadPool """
-    def __init__(self, pool, group=None, target=None, name=None, args=(), kwargs=None, daemon=None):
+    :type pool: DynamicPool """
+    def __init__(self, pool, target, args=(), kwargs=None, daemon=None, group=None, name=None):
         self.pool = pool
         threading.Thread.__init__(self, group, target, name, args, kwargs, daemon=daemon)
+        self.start()
 
     def run(self):
         """Method representing the thread's activity.
@@ -94,13 +95,102 @@ class DynamicWorker(threading.Thread):
         from the args and kwargs arguments, respectively.
 
         """
+        self.pool.threads.append(self)
         try:
             if self._target:
                 self.pool.results.put(self._target(*self._args, **self._kwargs))
         finally:
             # Avoid a refcycle if the thread is running a function with
             # an argument that has a member that points to the thread.
+            self.pool.threads.remove(self)
             del self._target, self._args, self._kwargs
+
+
+class ThreadManager(Thread):
+    def __init__(self, pool, group=None, name=None, daemon=True, timeout=0.1):
+        """ Thread executing tasks from a given tasks queue
+        :type pool: DynamicPool """
+        Thread.__init__(self, group=group, name=name, daemon=daemon)
+        self.pool = pool
+        self.start()
+        self.timeout = timeout
+
+    def run(self):
+        while self._is_stopped is False:
+            if self.pool.tasks.qsize() > 0:
+                try:
+                    if self.pool.max_workers is None:
+                        target, args, kwargs = self.pool.tasks.get(timeout=self.timeout)
+                        DynamicWorker(pool=self.pool, target=target, args=args, kwargs=kwargs, daemon=self.pool.daemon)
+                    elif self.pool.max_workers > len(self.pool.threads):
+                        target, args, kwargs = self.pool.tasks.get(timeout=self.timeout)
+                        DynamicWorker(pool=self.pool, target=target, args=args, kwargs=kwargs, daemon=self.pool.daemon)
+                except Empty:
+                    pass
+                except Exception as e:
+                    if self.pool.store_errors is True:
+                        self.pool.errors.put(e)
+                    else:
+                        self.stop()
+                        self.pool.manager = ThreadManager(pool=self.pool, group=None, name=None, daemon=self.daemon,
+                                                          timeout=self.timeout)
+                        del self._target, self._args, self._kwargs
+                        raise e
+
+    def stop(self):
+        self._is_stopped = True
+
+
+class DynamicPool:
+    """Pool of dynamic thread workers consuming tasks from a queue
+    the number of running workers changes by demand"""
+
+    def __init__(self, max_workers=None, daemon=True, timeout=0.1, store_errors=False):
+        """ create a pool of workers, run tasks, collect results """
+        self.threads = []
+        self.results = Queue()
+        self.tasks = Queue()
+        self.errors = Queue()
+        self.daemon = daemon
+        self.timeout = timeout
+        self.max_workers = max_workers
+        self.store_errors = store_errors
+        self.is_stopped = False
+        self.manager = ThreadManager(pool=self, group=None, name=None, daemon=daemon, timeout=timeout)
+
+    def get(self, timeout=None):
+        return self.results.get(timeout)
+
+    def gets(self, timeout=None):
+        if timeout is None:
+            timeout = self.timeout
+        results = []
+        while self.results.qsize() > 0:
+            try:
+                results.append(self.results.get(timeout))
+            except Empty:
+                pass
+        return results
+
+    def put(self, target, *args, **kwargs):
+        """Add a task to the queue"""
+        self.tasks.put((target, args, kwargs))
+
+    def join(self):
+        """Wait for completion of all the tasks in the queue"""
+        if self.is_stopped is False:
+            while not self.tasks.empty():
+                pass
+            self.stop()
+        self.manager.join()
+
+    def stop(self):
+        self.is_stopped = True
+        self.manager.stop()
+
+    def start(self):
+        self.is_stopped = False
+        self.manager.start()
 
 
 class ThreadWorker(Thread):
@@ -115,63 +205,37 @@ class ThreadWorker(Thread):
         self.timeout = timeout
 
     def run(self):
-        try:
-            while self._is_stopped is False:
-                if self.pool.lifecycle is not None:
-                    if self.pool.lifecycle <= time() - self.pool.creation_time:
-                        if self.pool.is_stopped is False:
-                            self.pool.is_stopped = True
+        while self._is_stopped is False:
+            if self.pool.lifecycle is not None:
+                if self.pool.lifecycle <= time() - self.pool.creation_time:
+                    if self.pool.is_stopped is False:
+                        self.pool.is_stopped = True
+                    self.stop()
+                    break
+            if self.pool.tasks.qsize() > 0:
+                try:
+                    self.running_task = target, args, kwargs = self.pool.tasks.get(timeout=self.timeout)
+                    result = target(*args, **kwargs)
+                    self.running_task = None
+                    self.pool.tasks.task_done()
+                    if result is not None:
+                        if self.pool.collect_results is True:
+                            self.pool.results.put(result)
+                        if self.collect_results is True:
+                            self.results.put(result)
+                except Empty:
+                    pass
+                except Exception as e:
+                    if self.pool.store_errors is True:
+                        self.pool.errors.put(e)
+                    else:
                         self.stop()
-                        break
-                if self.pool.tasks.qsize() > 0:
-                    try:
-                        self.running_task = target, args, kwargs = self.pool.tasks.get(timeout=self.timeout)
-                        result = target(*args, **kwargs)
-                        self.running_task = None
-                        self.pool.tasks.task_done()
-                        if result is not None:
-                            if self.pool.collect_results is True:
-                                self.pool.results.put(result)
-                            if self.collect_results is True:
-                                self.results.put(result)
-                    except Empty:
-                        pass
-                    except Exception as e:
-                        if self.pool.store_errors is True:
-                            self.pool.errors.put(e)
-                        else:
-                            self.stop()
-                            self.pool.add()
-                            raise e
-        finally:
-            # Avoid a refcycle if the thread is running a function with
-            # an argument that has a member that points to the thread.
-            del self._target, self._args, self._kwargs
+                        self.pool.add()
+                        del self._target, self._args, self._kwargs
+                        raise e
 
     def stop(self):
         self._is_stopped = True
-
-
-# TODO: finish dynamic pool
-class DynamicPool:
-    """Pool of dynamic thread workers consuming tasks from a queue
-    the number of running workers changes by demand"""
-
-    def __init__(self, max_workers=None, lifecycle=None, daemon=True):
-        """ create a pool of workers, run tasks, collect results
-        :param max_workers: number of workers
-        :param lifecycle: give your pool a set time to live before stopping
-        :type max_workers: int
-        :type lifecycle: int
-        """
-        self.tasks = Queue()
-        self.errors = Queue()
-        self.is_stopped = False
-        self.results = Queue()
-        self.lifecycle = lifecycle
-        self.creation_time = time()
-        self.daemon = daemon
-        self.max_workers = max_workers
 
 
 class ThreadPool:

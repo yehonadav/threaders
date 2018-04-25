@@ -322,5 +322,33 @@ class TestThreaders(unittest.TestCase):
         print("test_thread_pool_get_all {}s".format(test_end_time-test_start_time))
         self.assertGreater(5, threading.active_count())
 
+    def test_dynamic_pool(self):
+        def wait_delay():
+            time.sleep(0.3)
+            return threading.current_thread().name
+
+        test_start_time = time.time()
+
+        pool = threaders.DynamicPool(max_workers=10)
+        for _ in range(20):
+            pool.put(wait_delay)
+
+        max_worker_validation = 0
+        while len(pool.threads) > 0 or pool.tasks.qsize() > 0:
+            workers = len(pool.threads)
+            if workers > max_worker_validation:
+                max_worker_validation = workers
+        self.assertEqual(max_worker_validation, 10)
+
+        pool.join()
+
+        results = pool.gets()
+
+        self.assertEqual(len(results), 20)
+
+        test_end_time = time.time()
+        print("test_dynamic_pool {}s".format(test_end_time-test_start_time))
+        self.assertGreater(5, threading.active_count())
+
 if __name__ == '__main__':
     unittest.main()
