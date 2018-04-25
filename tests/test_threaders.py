@@ -301,6 +301,26 @@ class TestThreaders(unittest.TestCase):
         print("test_thread_pool_with_exception {}s".format(test_end_time-test_start_time))
         self.assertGreater(5, threading.active_count())
 
+    def test_thread_pool_get_all(self):
+        def wait_delay():
+            time.sleep(0.001)
+            return threading.current_thread().name
+
+        test_start_time = time.time()
+
+        pool = threaders.ThreadPool(workers=30, collect_results=True)
+        for _ in range(100):
+            pool.put(wait_delay)
+
+        pool.join()
+
+        results = pool.get_all()
+
+        self.assertEqual(len(results), 100)
+
+        test_end_time = time.time()
+        print("test_thread_pool_get_all {}s".format(test_end_time-test_start_time))
+        self.assertGreater(5, threading.active_count())
 
 if __name__ == '__main__':
     unittest.main()

@@ -58,43 +58,55 @@ from time import time
 class Thread(threading.Thread):
     def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, max_results=0, daemon=None):
         self.results = Queue(max_results)
-        threading.Thread.__init__(self, group, target, name, (self.results,) + args, kwargs, daemon=daemon)
+        threading.Thread.__init__(self, group, target, name, args, kwargs, daemon=daemon)
+
+    def run(self):
+        """Method representing the thread's activity.
+
+        You may override this method in a subclass. The standard run() method
+        invokes the callable object passed to the object's constructor as the
+        target argument, if any, with sequential and keyword arguments taken
+        from the args and kwargs arguments, respectively.
+
+        """
+        try:
+            if self._target:
+                self.results.put(self._target(*self._args, **self._kwargs))
+        finally:
+            # Avoid a refcycle if the thread is running a function with
+            # an argument that has a member that points to the thread.
+            del self._target, self._args, self._kwargs
 
 
-def threader(group=None, name=None, daemon=True):
-    """ decorator to thread functions
-    :param group: reserved for future extension when a ThreadGroup class is implemented
-    :param name: thread name
-    :param daemon: thread behavior """
+class DynamicWorker(threading.Thread):
+    """ Thread executing tasks from a given tasks queue
+    :type pool: ThreadPool """
+    def __init__(self, pool, group=None, target=None, name=None, args=(), kwargs=None, daemon=None):
+        self.pool = pool
+        threading.Thread.__init__(self, group, target, name, args, kwargs, daemon=daemon)
 
-    def decorator(target):
-        """ :param target: function to be threaded """
+    def run(self):
+        """Method representing the thread's activity.
 
-        def wrapped_job(queue, *args, **kwargs):
-            """ this function calls the decorated function
-            and puts the result in a queue
-            :type queue: Queue """
-            queue.put(target(*args, **kwargs))
+        You may override this method in a subclass. The standard run() method
+        invokes the callable object passed to the object's constructor as the
+        target argument, if any, with sequential and keyword arguments taken
+        from the args and kwargs arguments, respectively.
 
-        def wrap(*args, **kwargs):
-            """ this is the function returned from the decorator. It fires off
-            wrapped_f in a new thread and returns the thread object with
-            the result queue attached
-            :rtype: Thread """
-            thread = Thread(group=group, target=wrapped_job, name=name, args=args, kwargs=kwargs, daemon=daemon)
-            thread.start()
-            return thread
-
-        return wrap
-
-    return decorator
+        """
+        try:
+            if self._target:
+                self.pool.results.put(self._target(*self._args, **self._kwargs))
+        finally:
+            # Avoid a refcycle if the thread is running a function with
+            # an argument that has a member that points to the thread.
+            del self._target, self._args, self._kwargs
 
 
 class ThreadWorker(Thread):
-    """Thread executing tasks from a given tasks queue
-    :type pool: ThreadPool """
-
     def __init__(self, pool, group=None, name=None, daemon=True, collect_results=False, max_results=0, timeout=0.1):
+        """ Thread executing tasks from a given tasks queue
+        :type pool: ThreadPool """
         Thread.__init__(self, group=group, name=name, daemon=daemon, max_results=max_results)
         self.pool = pool
         self.start()
@@ -102,44 +114,69 @@ class ThreadWorker(Thread):
         self.running_task = None
         self.timeout = timeout
 
-    def start(self):
-        Thread.start(self)
-
     def run(self):
-        while self._is_stopped is False:
-            if self.pool.lifecycle is not None:
-                if self.pool.lifecycle <= time() - self.pool.creation_time:
-                    if self.pool.is_stopped is False:
-                        self.pool.is_stopped = True
-                    self.stop()
-                    break
-            if self.pool.tasks.qsize() > 0:
-                try:
-                    self.running_task = target, args, kwargs = self.pool.tasks.get(timeout=self.timeout)
-                    result = target(*args, **kwargs)
-                    self.running_task = None
-                    self.pool.tasks.task_done()
-                    if result is not None:
-                        if self.pool.collect_results is True:
-                            self.pool.results.put(result)
-                        if self.collect_results is True:
-                            self.results.put(result)
-                except Empty:
-                    pass
-                except Exception as e:
-                    if self.pool.store_errors is True:
-                        self.pool.errors.put(e)
-                    else:
+        try:
+            while self._is_stopped is False:
+                if self.pool.lifecycle is not None:
+                    if self.pool.lifecycle <= time() - self.pool.creation_time:
+                        if self.pool.is_stopped is False:
+                            self.pool.is_stopped = True
                         self.stop()
-                        self.pool.add()
-                        raise e
+                        break
+                if self.pool.tasks.qsize() > 0:
+                    try:
+                        self.running_task = target, args, kwargs = self.pool.tasks.get(timeout=self.timeout)
+                        result = target(*args, **kwargs)
+                        self.running_task = None
+                        self.pool.tasks.task_done()
+                        if result is not None:
+                            if self.pool.collect_results is True:
+                                self.pool.results.put(result)
+                            if self.collect_results is True:
+                                self.results.put(result)
+                    except Empty:
+                        pass
+                    except Exception as e:
+                        if self.pool.store_errors is True:
+                            self.pool.errors.put(e)
+                        else:
+                            self.stop()
+                            self.pool.add()
+                            raise e
+        finally:
+            # Avoid a refcycle if the thread is running a function with
+            # an argument that has a member that points to the thread.
+            del self._target, self._args, self._kwargs
 
     def stop(self):
         self._is_stopped = True
 
 
+# TODO: finish dynamic pool
+class DynamicPool:
+    """Pool of dynamic thread workers consuming tasks from a queue
+    the number of running workers changes by demand"""
+
+    def __init__(self, max_workers=None, lifecycle=None, daemon=True):
+        """ create a pool of workers, run tasks, collect results
+        :param max_workers: number of workers
+        :param lifecycle: give your pool a set time to live before stopping
+        :type max_workers: int
+        :type lifecycle: int
+        """
+        self.tasks = Queue()
+        self.errors = Queue()
+        self.is_stopped = False
+        self.results = Queue()
+        self.lifecycle = lifecycle
+        self.creation_time = time()
+        self.daemon = daemon
+        self.max_workers = max_workers
+
+
 class ThreadPool:
-    """Pool of threads consuming tasks from a queue"""
+    """Pool of thread workers consuming tasks from a queue
+    the number of workers should be static"""
 
     def __init__(
             self,
@@ -303,3 +340,23 @@ def get_first_result(threads, timeout=None):
         if timeout is not None:
             if time() - t >= timeout:
                 raise TimeoutError
+
+
+def threader(group=None, name=None, daemon=True):
+    """ decorator to thread functions
+    :param group: reserved for future extension when a ThreadGroup class is implemented
+    :param name: thread name
+    :param daemon: thread behavior """
+
+    def decorator(target):
+        """ :param target: function to be threaded """
+        def wrap(*args, **kwargs):
+            """ this is the function returned from the decorator. It fires off
+            wrapped_f in a new thread and returns the thread object with
+            the result queue attached
+            :rtype: Thread """
+            thread = Thread(group=group, target=target, name=name, args=args, kwargs=kwargs, daemon=daemon)
+            thread.start()
+            return thread
+        return wrap
+    return decorator
