@@ -77,7 +77,26 @@ class TestThreaders(unittest.TestCase):
         for _ in range(20):
             pool.put(wait_delay)
 
+        r = pool.get()
         self.assertIn(pool.get(), (0.01, 0.02, 0.03, 0.04, 0.05))
+        pool.join()
+
+        test_end_time = time.time()
+        print("test_thread_pool_first_result {}s".format(test_end_time - test_start_time))
+        self.assertGreater(5, threading.active_count())
+
+    def test_thread_pool_first_result2(self):
+        def wait_delay(n):
+            n *= 2
+            return n
+
+        test_start_time = time.time()
+
+        pool = threaders.ThreadPool(workers=5, collect_results=True)
+        for _ in range(10):
+            pool.put(wait_delay, 1)
+
+        self.assertEqual(pool.get(), 2)
         pool.join()
 
         test_end_time = time.time()
