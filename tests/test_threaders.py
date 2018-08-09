@@ -3,6 +3,7 @@ import time
 from threaders import threaders
 from random import randrange
 import threading
+from queue import Empty
 
 
 class TestThreaders(unittest.TestCase):
@@ -19,14 +20,14 @@ class TestThreaders(unittest.TestCase):
 
         # create threads
         threads = [function_to_be_threaded(i) for i in range(10)]
+        try:
+            self.assertEqual(len(threads), 10)
 
-        self.assertEqual(len(threads), 10)
-
-        self.assertGreater(0.01, threaders.get_first_result(threads))
-
-        # kill threads
-        for thread in threads:
-            thread.join()
+            self.assertGreater(0.01, threaders.get_first_result(threads))
+        finally:
+            # kill threads
+            for thread in threads:
+                thread.join()
 
         self.assertGreater(time.time() - t, 0.09)
 
@@ -51,11 +52,13 @@ class TestThreaders(unittest.TestCase):
 
         # create thread pool
         pool = threaders.ThreadPool(workers=20, collect_results=True, worker_collect_results=True)
-        for i, d in enumerate(delays):
-            pool.put(wait_delay, i, d)
+        try:
+            for i, d in enumerate(delays):
+                pool.put(wait_delay, i, d)
 
-        self.assertIn(threaders.get_first_result(pool.threads, timeout=1), range(50))
-        pool.join()
+            self.assertIn(threaders.get_first_result(pool.threads, timeout=1), range(50))
+        finally:
+            pool.join()
 
         # validation
         self.assertEqual(pool.results.qsize(), 50)
@@ -74,12 +77,13 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=5, collect_results=True)
-        for _ in range(20):
-            pool.put(wait_delay)
+        try:
+            for _ in range(20):
+                pool.put(wait_delay)
 
-        r = pool.get()
-        self.assertIn(pool.get(), (0.01, 0.02, 0.03, 0.04, 0.05))
-        pool.join()
+            self.assertIn(pool.get(), (0.01, 0.02, 0.03, 0.04, 0.05))
+        finally:
+            pool.join()
 
         test_end_time = time.time()
         print("test_thread_pool_first_result {}s".format(test_end_time - test_start_time))
@@ -93,11 +97,33 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=5, collect_results=True)
-        for _ in range(10):
-            pool.put(wait_delay, 1)
+        try:
+            for _ in range(10):
+                pool.put(wait_delay, 1)
 
-        self.assertEqual(pool.get(), 2)
-        pool.join()
+            self.assertEqual(pool.get(), 2)
+        finally:
+            pool.join()
+
+        test_end_time = time.time()
+        print("test_thread_pool_first_result {}s".format(test_end_time - test_start_time))
+        self.assertGreater(5, threading.active_count())
+
+    def test_thread_pool_first_result3(self):
+        def wait_delay(n):
+            n *= 2
+            return n
+
+        test_start_time = time.time()
+
+        pool = threaders.ThreadPool(collect_results=True)
+        try:
+            for _ in range(1):
+                pool.put(wait_delay, 1)
+            # time.sleep(0.00000000000000000001)
+            self.assertEqual(pool.get(), 2)
+        finally:
+            pool.join()
 
         test_end_time = time.time()
         print("test_thread_pool_first_result {}s".format(test_end_time - test_start_time))
@@ -113,18 +139,19 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=5, collect_results=True)
-        for _ in range(20):
-            pool.put(wait_delay)
+        try:
+            for _ in range(20):
+                pool.put(wait_delay)
 
-        validation = False
-        while not pool.tasks.empty():
-            try:
-                pool.get(timeout=0.009)
-            except TimeoutError:
-                validation = True
-                break
-
-        pool.join()
+            validation = False
+            while not pool.tasks.empty():
+                try:
+                    pool.get(timeout=0.009)
+                except Empty:
+                    validation = True
+                    break
+        finally:
+            pool.join()
         self.assertEqual(validation, True)
 
         test_end_time = time.time()
@@ -140,12 +167,15 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=5, collect_results=True)
-        for _ in range(1):
-            pool.put(wait_delay)
-
-        validation = pool.get()
-
-        pool.join()
+        try:
+            for _ in range(1):
+                pool.put(wait_delay)
+            try:
+                validation = pool.get(timeout=1)
+            except Empty:
+                validation = None
+        finally:
+            pool.join()
         self.assertEqual(validation, None)
 
         test_end_time = time.time()
@@ -161,19 +191,22 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=5, collect_results=True)
-        for _ in range(1):
-            pool.put(wait_delay)
-
-        validation = pool.get(timeout=1)
-
-        pool.join()
+        try:
+            for _ in range(1):
+                pool.put(wait_delay)
+            try:
+                validation = pool.get(timeout=1)
+            except Empty:
+                validation = None
+        finally:
+            pool.join()
         self.assertEqual(validation, None)
 
         test_end_time = time.time()
         print("test_thread_pool_first_result_return_none_with_timeout {}s".format(test_end_time - test_start_time))
         self.assertGreater(5, threading.active_count())
 
-    def test_thread_pool_first_result_raise_timeout_before_returning_none(self):
+    def test_thread_pool_first_result_times_out(self):
         def wait_delay():
             from random import randint
             tt = randint(1, 5) * 0.1
@@ -188,7 +221,7 @@ class TestThreaders(unittest.TestCase):
         try:
             validation = False
             pool.get(timeout=0.09)
-        except TimeoutError:
+        except Empty:
             validation = True
 
         pool.join()
@@ -208,12 +241,13 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=5, collect_results=True)
-        for _ in range(100):
-            pool.put(wait_delay)
-
-        t = time.time()
-        pool.get_stop_and_join()
-        t = time.time() - t
+        try:
+            for _ in range(100):
+                pool.put(wait_delay)
+        finally:
+            t = time.time()
+            pool.get_stop_and_join()
+            t = time.time() - t
 
         self.assertGreater(1, t)
 
@@ -228,12 +262,16 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=5, collect_results=True)
-        for _ in range(30):
-            pool.put(wait_delay)
-
-        t = time.time()
-        pool.get_stop_and_join()
-        t = time.time() - t
+        try:
+            for _ in range(30):
+                pool.put(wait_delay)
+        finally:
+            t = time.time()
+            try:
+                pool.get_stop_and_join(timeout=0.3)
+            except Empty:
+                pass
+            t = time.time() - t
 
         self.assertGreater(1, t)
 
@@ -250,19 +288,20 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=30, lifecycle=1, collect_results=True)
-        for _ in range(1000):
-            pool.put(wait_delay)
+        try:
+            for _ in range(1000):
+                pool.put(wait_delay)
 
-        time.sleep(1.1)
-        self.assertEqual(pool.is_stopped, True)
+            time.sleep(1.1)
+            self.assertEqual(pool.is_stopped, True)
 
-        results_size = pool.results.qsize()
-        self.assertGreater(301, results_size)
-        self.assertGreater(results_size, 250)
+            results_size = pool.results.qsize()
+            assert 10 < results_size < 301
 
-        test_end_time = time.time()
-        print("test_thread_pool_with_lifecycle {}s".format(test_end_time-test_start_time))
-        pool.join()
+            test_end_time = time.time()
+            print("test_thread_pool_with_lifecycle {}s".format(test_end_time-test_start_time))
+        finally:
+            pool.join()
         self.assertGreater(5, threading.active_count())
 
     def test_thread_pool_with_error_storage(self):
@@ -276,15 +315,17 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=30, lifecycle=100, collect_results=True, store_errors=True)
-        for _ in range(100):
-            pool.put(wait_delay)
-        pool.put(raise_exception)
+        try:
+            for _ in range(100):
+                pool.put(wait_delay)
+            pool.put(raise_exception)
 
-        while pool.errors.qsize() < 1:
-            pass
+            while pool.errors.qsize() < 1:
+                pass
 
-        self.assertEqual(len(pool.threads), 30)
-        pool.join()
+            self.assertEqual(len(pool.threads), 30)
+        finally:
+            pool.join()
 
         error = pool.errors.get()
         with self.assertRaises(TypeError):
@@ -305,16 +346,17 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=30, lifecycle=100, collect_results=True)
-        pool.put(raise_exception)
-        for _ in range(100):
-            pool.put(wait_delay)
-
-        self.assertGreater(threading.active_count(), 30)
-
         try:
-            pool.join()
-        except TypeError:
-            pass
+            pool.put(raise_exception)
+            for _ in range(100):
+                pool.put(wait_delay)
+
+            self.assertGreater(threading.active_count(), 30)
+        finally:
+            try:
+                pool.join()
+            except TypeError:
+                pass
 
         test_end_time = time.time()
         print("test_thread_pool_with_exception {}s".format(test_end_time-test_start_time))
@@ -328,10 +370,11 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.ThreadPool(workers=30, collect_results=True)
-        for _ in range(100):
-            pool.put(wait_delay)
-
-        pool.join()
+        try:
+            for _ in range(100):
+                pool.put(wait_delay)
+        finally:
+            pool.join()
 
         results = pool.get_all()
 
@@ -349,17 +392,18 @@ class TestThreaders(unittest.TestCase):
         test_start_time = time.time()
 
         pool = threaders.DynamicPool(max_workers=10)
-        for _ in range(20):
-            pool.put(wait_delay)
+        try:
+            for _ in range(20):
+                pool.put(wait_delay)
 
-        max_worker_validation = 0
-        while len(pool.threads) > 0 or pool.tasks.qsize() > 0:
-            workers = len(pool.threads)
-            if workers > max_worker_validation:
-                max_worker_validation = workers
-        self.assertEqual(max_worker_validation, 10)
-
-        pool.join()
+            max_worker_validation = 0
+            while len(pool.threads) > 0 or pool.tasks.qsize() > 0:
+                workers = len(pool.threads)
+                if workers > max_worker_validation:
+                    max_worker_validation = workers
+            assert 5 < max_worker_validation < 11
+        finally:
+            pool.join()
 
         results = pool.gets()
 
@@ -368,6 +412,21 @@ class TestThreaders(unittest.TestCase):
         test_end_time = time.time()
         print("test_dynamic_pool {}s".format(test_end_time-test_start_time))
         self.assertGreater(5, threading.active_count())
+
+    def test_thread(self):
+        def wait_delay(a):
+            time.sleep(a*0.1)
+            return a
+
+        test_start_time = time.time()
+
+        r = threaders.thread(wait_delay, 1).get_and_join()
+        self.assertEqual(r, 1)
+
+        test_end_time = time.time()
+        print("test_dynamic_pool {}s".format(test_end_time-test_start_time))
+        self.assertGreater(5, threading.active_count())
+
 
 if __name__ == '__main__':
     unittest.main()

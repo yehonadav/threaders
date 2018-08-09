@@ -215,8 +215,10 @@ class ThreadWorker(Thread):
             if self.pool.tasks.qsize() > 0:
                 try:
                     self.running_task = target, args, kwargs = self.pool.tasks.get(timeout=self.timeout)
-                    result = target(*args, **kwargs)
-                    self.running_task = None
+                    try:
+                        result = target(*args, **kwargs)
+                    finally:
+                        self.running_task = None
                     self.pool.tasks.task_done()
                     if result is not None:
                         if self.pool.collect_results is True:
@@ -269,6 +271,7 @@ class ThreadPool:
         self.collect_results = collect_results
         self.is_stopped = False
         self.results = Queue(max_results)
+        self.get = self.results.get
         self.lifecycle = lifecycle
         self.creation_time = time()
         self.timeout = timeout
@@ -308,11 +311,11 @@ class ThreadPool:
         for thread in self.threads:
             thread.start()
 
-    def get_all(self, timeout=None):
+    def get_all(self, timeout=None, block=True):
         results = []
         while not self.results.empty() or not self.tasks.empty():
             try:
-                result = self.get(timeout)
+                result = self.get(timeout=timeout, block=block)
                 if result is not None:
                     results.append(result)
             except TimeoutError:
@@ -321,72 +324,72 @@ class ThreadPool:
             return None
         return results
 
-    def get(self, timeout=None):
-        """ will return the first unNone result.
-        this method demand for self.collect_results = True
-        if no results are found, will return None
-        :type timeout: float
-        """
-        t = time()
-        some_tasks_are_running = None
-        while self.collect_results:
-            # get result
-            if not self.results.empty():
-                try:
-                    return self.results.get(self.timeout)
-                except Empty:
-                    pass
+    # def get(self, timeout=None):
+    #     """ will return the first unNone result.
+    #     this method demand for self.collect_results = True
+    #     if no results are found, will return None
+    #     :type timeout: float
+    #     """
+    #     t = time()
+    #     some_tasks_are_running = None
+    #     while self.collect_results:
+    #         # get result
+    #         if not self.results.empty():
+    #             try:
+    #                 return self.results.get(timeout=self.timeout)
+    #             except Empty:
+    #                 pass
+    #
+    #         # return none if all tasks are done but there are no results
+    #         while self.tasks.empty():
+    #             some_tasks_are_running = False
+    #             for thread in self.threads:
+    #                 if timeout is not None and time() - t >= timeout:
+    #                     raise TimeoutError
+    #                 elif thread.running_task is not None:
+    #                     some_tasks_are_running = True
+    #                     break
+    #             if some_tasks_are_running is False:
+    #                 break
+    #         if some_tasks_are_running is False:
+    #             return None
+    #
+    #         if timeout is not None and time() - t >= timeout:
+    #             raise TimeoutError
 
-            # return none if all tasks are done but there are no results
-            while self.tasks.empty():
-                some_tasks_are_running = False
-                for thread in self.threads:
-                    if timeout is not None and time() - t >= timeout:
-                        raise TimeoutError
-                    elif thread.running_task is not None:
-                        some_tasks_are_running = True
-                        break
-                if some_tasks_are_running is False:
-                    break
-            if some_tasks_are_running is False:
-                return None
-
-            if timeout is not None and time() - t >= timeout:
-                raise TimeoutError
-
-    def get_and_stop(self, timeout=None):
+    def get_and_stop(self, timeout=None, block=True):
         try:
-            return self.get(timeout)
+            return self.get(timeout=timeout, block=block)
         finally:
             self.stop()
 
-    def get_and_join(self, timeout=None):
+    def get_and_join(self, timeout=None, block=True):
         try:
-            return self.get(timeout)
+            return self.get(timeout=timeout, block=block)
         finally:
             self.join()
 
-    def get_stop_and_join(self, timeout=None):
+    def get_stop_and_join(self, timeout=None, block=True):
         try:
-            return self.get_and_stop(timeout)
+            return self.get_and_stop(timeout=timeout, block=block)
         finally:
             self.join()
 
-    def get_all_and_stop(self, timeout=None):
+    def get_all_and_stop(self, timeout=None, block=True):
         try:
-            return self.get_all(timeout)
+            return self.get_all(timeout=timeout, block=block)
         finally:
             self.stop()
 
-    def get_all_and_join(self, timeout=None):
+    def get_all_and_join(self, timeout=None, block=True):
         try:
-            return self.get_all(timeout)
+            return self.get_all(timeout=timeout, block=block)
         finally:
             self.join()
 
-    def get_all_stop_and_join(self, timeout=None):
+    def get_all_stop_and_join(self, timeout=None, block=True):
         try:
-            return self.get_all_and_stop(timeout)
+            return self.get_all_and_stop(timeout=timeout, block=block)
         finally:
             self.join()
 
@@ -424,3 +427,9 @@ def threader(group=None, name=None, daemon=True):
             return thread
         return wrap
     return decorator
+
+
+def thread(function, *args, **kwargs):
+    thrd = ThreadPool(collect_results=True)
+    thrd.put(function, *args, **kwargs)
+    return thrd
