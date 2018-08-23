@@ -411,6 +411,21 @@ def get_first_result(threads, timeout=None):
 
 def threader(group=None, name=None, daemon=True):
     """ decorator to thread functions
+        example:
+            @threaders.threader()
+            def function_to_be_threaded(x):
+                ''':rtype: threaders.Thread'''
+                t = time.time()
+                time.sleep(0.01 * x)
+                return time.time() - t
+
+            test_start_time = time.time()
+            t = time.time()
+
+            # create thread and get result
+            r = function_to_be_threaded(i).results.get(timeout=10)
+
+
     :param group: reserved for future extension when a ThreadGroup class is implemented
     :param name: thread name
     :param daemon: thread behavior """
