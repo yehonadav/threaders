@@ -50,6 +50,7 @@ if __name__ == "__main__":
     main()
 """
 
+import multiprocessing
 import threading
 from queue import Queue, Empty
 from time import time
@@ -176,13 +177,13 @@ class DynamicPool:
         """Add a task to the queue"""
         self.tasks.put((target, args, kwargs))
 
-    def join(self):
+    def join(self, timeout=None):
         """Wait for completion of all the tasks in the queue"""
         if self.is_stopped is False:
             while not self.tasks.empty():
                 pass
             self.stop()
-        self.manager.join()
+        self.manager.join(timeout=timeout)
 
     def stop(self):
         self.is_stopped = True
@@ -292,14 +293,14 @@ class ThreadPool:
         """Add a task to the queue"""
         self.tasks.put((target, args, kwargs))
 
-    def join(self):
+    def join(self, timeout=None):
         """Wait for completion of all the tasks in the queue"""
         if self.is_stopped is False:
             while not self.tasks.empty():
                 pass
             self.stop()
         for thread in self.threads:
-            thread.join()
+            thread.join(timeout=timeout)
 
     def stop(self):
         self.is_stopped = True
@@ -367,13 +368,13 @@ class ThreadPool:
         try:
             return self.get(timeout=timeout, block=block)
         finally:
-            self.join()
+            self.join(timeout=timeout)
 
     def get_stop_and_join(self, timeout=None, block=True):
         try:
             return self.get_and_stop(timeout=timeout, block=block)
         finally:
-            self.join()
+            self.join(timeout=timeout)
 
     def get_all_and_stop(self, timeout=None, block=True):
         try:
@@ -385,13 +386,13 @@ class ThreadPool:
         try:
             return self.get_all(timeout=timeout, block=block)
         finally:
-            self.join()
+            self.join(timeout=timeout)
 
     def get_all_stop_and_join(self, timeout=None, block=True):
         try:
             return self.get_all_and_stop(timeout=timeout, block=block)
         finally:
-            self.join()
+            self.join(timeout=timeout)
 
 
 def get_first_result(threads, timeout=None):
@@ -448,3 +449,44 @@ def thread(function, *args, **kwargs):
     thrd = ThreadPool(collect_results=True)
     thrd.put(function, *args, **kwargs)
     return thrd
+
+# this is a manager for both processes and threads
+# class shreder:
+#     def __init__(self,
+#             cpus=None,
+#             workers=1,
+#             lifecycle=None,
+#             max_tasks=0,
+#             daemon=True,
+#             collect_results=False,
+#             worker_collect_results=False,
+#             max_results=0,
+#             max_worker_results=0,
+#             timeout=0.1,
+#             store_errors=False):
+#
+#         if cpus is None:
+#             self.cpus = cpus.cpu_count()
+#         else:
+#             self.cpus = cpus
+#
+#         self.thread_pools = [
+#             ThreadPool(
+#                 workers=workers,
+#                 lifecycle=lifecycle,
+#                 max_tasks=max_tasks,
+#                 daemon=daemon,
+#                 collect_results=collect_results,
+#                 worker_collect_results=worker_collect_results,
+#                 max_results=max_results,
+#                 max_worker_results=max_worker_results,
+#                 timeout=timeout,
+#                 store_errors=store_errors)
+#             for _ in range(self.cpus)]
+#
+#         self.mp_pool = multiprocessing.Pool()
+#         self.processes = [multiprocessing.Process(ThreadPool()) for _ in range(self.cpus)]
+#
+#     def put(self, target, *args, **kwargs):
+#         lambda
+#         self.mp_pool.apply_async(func=target, args=args, kwds=kwargs)
