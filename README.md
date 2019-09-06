@@ -3,7 +3,7 @@
 [![version](https://img.shields.io/pypi/v/threaders.svg)](https://pypi.python.org/pypi)
 [![open issues](https://img.shields.io/github/issues/yehonadav/threaders)](https://github/issues-raw/yehonadav/threaders)
 [![downloads](https://img.shields.io/pypi/dm/threaders.svg)](https://pypi.python.org/pypi)
-![code size](https://img.shields.io/github/languages/code-size/yeahonadav/threaders)
+![code size](https://img.shields.io/github/languages/code-size/yehonadav/threaders)
 
 threaders is a small module to help write  
 clean threaded code using threading decorators  
