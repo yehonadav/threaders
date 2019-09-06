@@ -1,5 +1,9 @@
-threaders
-
+# threaders
+![logo](https://www.qaviton.com/wp-content/uploads/logo-svg.svg)  
+[![version](https://img.shields.io/pypi/v/threaders.svg)](https://pypi.python.org/pypi)
+[![open issues](https://img.shields.io/github/issues/qaviton/threaders)](https://github/issues-raw/qaviton/threaders)
+[![downloads](https://img.shields.io/pypi/dm/threaders.svg)](https://pypi.python.org/pypi)
+![code size](https://img.shields.io/github/languages/code-size/qaviton/threaders)
 
 threaders is a small module to help write
 
